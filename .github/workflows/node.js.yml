@@ -1,0 +1,70 @@
+# .github/workflows/release.yml
+
+name: Build and Release
+
+# 触发工作流程的事件
+on:
+  # 1. 当一个匹配 'v*.*.*' 模式的 tag 被推送到仓库时触发
+  push:
+    tags:
+      - 'v*.*.*' # 例如 v1.0.0, v1.2.3
+  # 2. 允许你从 Actions 标签页手动触发此工作流程
+  workflow_dispatch:
+
+# 定义一个或多个作业
+jobs:
+  # 作业 ID：'build-and-release'
+  build-and-release:
+    # 作业运行的环境
+    runs-on: ubuntu-latest
+
+    # 为作业设置权限，允许创建 Release 和上传附件
+    permissions:
+      contents: write # 允许写入仓库内容（例如创建 Release）
+
+    # 作业包含的一系列步骤
+    steps:
+      # 步骤 1：检出仓库代码
+      - name: Checkout code
+        uses: actions/checkout@v4 # 使用官方的 checkout action
+
+      # 步骤 2：设置 Node.js 环境
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x' # 指定 Node.js 版本 (选择一个合适的 LTS 版本)
+          cache: 'yarn'      # 启用 Yarn 缓存以加快依赖安装速度
+
+      # 步骤 3：安装项目依赖
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile # 使用 yarn 安装依赖，--frozen-lockfile 确保使用 lock 文件中的版本
+
+      # 步骤 4：构建项目
+      - name: Build project
+        run: yarn build # 运行 package.json 中定义的 build 脚本
+
+      # 步骤 5：打包 build 目录的内容
+      - name: Package build output
+        run: |
+          cd build # 进入 build 目录
+          zip -r ../mdnice-markdown-resume-build.zip . # 将当前目录(build目录)的内容压缩到上一层的 zip 文件
+          cd .. # 返回到项目根目录
+        # 注意：上面的命令会直接打包 build 目录下的文件和文件夹。
+        # 如果你想连同 build 目录本身一起打包，可以使用: zip -r mdnice-markdown-resume-build.zip build/
+
+      # 步骤 6：创建 GitHub Release 并上传构建产物
+      - name: Create GitHub Release and Upload Build Artifact
+        uses: softprops/action-gh-release@v2 # 使用流行的第三方 action 来创建 Release 和上传文件
+        # 仅在推送 tag 时运行此步骤（手动触发时 github.ref_name 也是存在的，所以此 if 判断可选）
+        # if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # 使用 GitHub 自动提供的 token 进行认证
+        with:
+          tag_name: ${{ github.ref_name }}              # 使用触发工作流程的 tag 名称
+          name: Release ${{ github.ref_name }}          # Release 的名称，通常和 tag 名称一致
+          # body: |                                     # 可选：Release 的描述内容
+          #   Automated release based on tag ${{ github.ref_name }}
+          #   Contains build artifacts.
+          draft: false                                   # 设置为 true 会创建草稿 Release
+          prerelease: false                              # 设置为 true 会标记为预发布 Release
+          files: mdnice-markdown-resume-build.zip      # 指定要上传的文件（之前打包的 zip 文件）
